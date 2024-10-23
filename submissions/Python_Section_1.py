@@ -231,115 +231,127 @@ print(df_result)
 
 from typing import List
 
-def rotate_and_multiply_matrix(matrix: List[List[int]]) -> List[List[int]]:
+def rotate_and_transform_matrix(matrix: List[List[int]]) -> List[List[int]]:
     """
-    Rotate the given matrix by 90 degrees clockwise, then multiply each element 
-    by the sum of its original row and column index before rotation.
+    Rotate the given matrix by 90 degrees clockwise, then replace each element 
+    with the sum of all elements in its row and column (in the rotated matrix), excluding itself.
     
     Args:
     - matrix (List[List[int]]): 2D list representing the matrix to be transformed.
     
     Returns:
     - List[List[int]]: A new 2D list representing the transformed matrix.
-    
-    Example:
-    >>> matrix = [[1, 2, 3], 
-    ...           [4, 5, 6], 
-    ...           [7, 8, 9]]
-    >>> result = rotate_and_multiply_matrix(matrix)
-    >>> print(result)
-    [[12, 21, 30], 
-     [15, 24, 33], 
-     [18, 27, 36]]
     """
     if not matrix or not matrix[0]:
         return []
-
+    
+    n = len(matrix)
+    
     # Step 1: Rotate the matrix 90 degrees clockwise
-    rotated = [list(reversed(col)) for col in zip(*matrix)]
+    rotated = [[0] * n for _ in range(n)]
     
-    # Step 2: Multiply each element by the sum of its original row and column index
-    result = [[value * (i + j) for j, value in enumerate(row)] for i, row in enumerate(rotated)]
+    for i in range(n):
+        for j in range(n):
+            rotated[j][n - 1 - i] = matrix[i][j]
     
-    return result
+    # Step 2: Calculate the sum of elements in each row and column of the rotated matrix
+    row_sums = [0] * n
+    col_sums = [0] * n
+    
+    for i in range(n):
+        for j in range(n):
+            row_sums[i] += rotated[i][j]
+            col_sums[j] += rotated[i][j]
+    
+    # Step 3: Create the transformed matrix
+    transformed = [[0] * n for _ in range(n)]  # Initialize the transformed matrix
+
+    for i in range(n):
+        for j in range(n):
+            # Replace the current element with the row sum + column sum - itself
+            transformed[i][j] = row_sums[i] + col_sums[j] - rotated[i][j]
+
+    return transformed
 
 # Example usage:
 matrix = [[1, 2, 3], 
           [4, 5, 6], 
           [7, 8, 9]]
-result = rotate_and_multiply_matrix(matrix)
-print(result)
-
-# Expected Output:
-# [[12, 21, 30], 
-#  [15, 24, 33], 
-#  [18, 27, 36]]
-
-
-import pandas as pd
+result = rotate_and_transform_matrix(matrix)
+print(result)  # Expected output: [[22, 19, 16], [23, 20, 17], [24, 21, 18]]
 
 def time_check(df: pd.DataFrame) -> pd.Series:
     """
-    Use shared dataset-2 to verify the completeness of the data by checking whether the timestamps 
-    for each unique (`id`, `id_2`) pair cover a full 24-hour and 7 days period.
+    Verify the completeness of the time data by checking whether the timestamps for each unique (`id`, `id_2`) pair
+    cover a full 24-hour period and span all 7 days of the week.
 
     Args:
-        df (pandas.DataFrame): DataFrame containing at least 'id', 'id_2', and 'timestamp' columns.
+        df (pd.DataFrame): Input DataFrame containing 'id', 'id_2', 'startDay', 'startTime', 'endDay', 'endTime'.
 
     Returns:
-        pd.Series: A boolean series indicating whether each unique (`id`, `id_2`) pair covers a full 24-hour and 7-day period.
-
-    Example:
-    >>> data = {
-    ...     'id': [1, 1, 1, 2, 2],
-    ...     'id_2': [101, 101, 101, 201, 201],
-    ...     'timestamp': [
-    ...         '2024-01-01 00:00:00',
-    ...         '2024-01-01 12:00:00',
-    ...         '2024-01-02 00:00:00',
-    ...         '2024-01-02 01:00:00',
-    ...         '2024-01-03 01:00:00'
-    ...     ]
-    ... }
-    >>> df = pd.DataFrame(data)
-    >>> df['timestamp'] = pd.to_datetime(df['timestamp'])  # Ensure timestamp is in datetime format
-    >>> result = time_check(df)
-    >>> print(result)
-    0    True
-    1    False
-    dtype: bool
+        pd.Series: A boolean series with multi-index (id, id_2) indicating if each pair has incorrect timestamps.
     """
-    # Ensure timestamps are in datetime format
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    # Create a boolean series
-    result = df.groupby(['id', 'id_2']).agg(
-        start_time=('timestamp', 'min'),
-        end_time=('timestamp', 'max'),
-        count=('timestamp', 'count')
-    ).reset_index()
-    
-    # Check if they cover a full 24-hour period and at least one record for each day
-    result['is_complete'] = (
-        (result['end_time'] - result['start_time'] >= pd.Timedelta(hours=24)) &
-        (result['count'] >= 7)  # Assuming at least 1 record for each day
-    )
-    
-    return result['is_complete']
+    # Check if required columns are present
+    required_columns = ['id', 'id_2', 'startDay', 'startTime', 'endDay', 'endTime']
+    if not all(col in df.columns for col in required_columns):
+        raise ValueError("The DataFrame must contain the following columns: " + ", ".join(required_columns))
+
+    # Create a base date for testing purposes
+    base_date = '2024-01-01'
+
+    # Standardize and create full datetime strings for start and end
+    df['start_datetime_str'] = df['startDay'].str.strip() + ' ' + df['startTime'].str.strip()
+    df['end_datetime_str'] = df['endDay'].str.strip() + ' ' + df['endTime'].str.strip()
+
+    # Combine base date with the strings for proper parsing
+    df['start_datetime'] = pd.to_datetime(base_date + ' ' + df['start_datetime_str'], format='%Y-%m-%d %A %H:%M:%S', errors='coerce')
+    df['end_datetime'] = pd.to_datetime(base_date + ' ' + df['end_datetime_str'], format='%Y-%m-%d %A %H:%M:%S', errors='coerce')
+
+    # Check for NaT values after conversion
+    print("\nRows with NaT values in start_datetime or end_datetime:")
+    print(df[df['start_datetime'].isna() | df['end_datetime'].isna()])
+
+    # Drop rows where datetime conversion failed
+    df.dropna(subset=['start_datetime', 'end_datetime'], inplace=True)
+
+    # Show remaining DataFrame after dropping NaT values
+    print("\nRemaining DataFrame after datetime conversion:")
+    print(df)
+
+    # Group by (id, id_2)
+    grouped = df.groupby(['id', 'id_2'])
+
+    def check_timestamps(group):
+        # Check if there are timestamps for all 7 days of the week
+        days_covered = group['start_datetime'].dt.day_name().unique()
+        full_days = {'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'}
+        
+        # Check if all days are covered
+        all_days_covered = full_days.issubset(days_covered)
+        
+        # Check if the timestamps cover a full 24-hour period
+        full_24_hours = (group['start_datetime'].min() <= group['end_datetime'].max() - pd.Timedelta(hours=24))
+        
+        # Return True if timestamps are incorrect (not covering all days and 24 hours)
+        return not (all_days_covered and full_24_hours)
+
+    # Apply the check function to each group and create a boolean series
+    result = grouped.apply(check_timestamps)
+
+    # Return a boolean series with multi-index (id, id_2)
+    return result
 
 # Example usage:
-data = {
-    'id': [1, 1, 1, 2, 2],
-    'id_2': [101, 101, 101, 201, 201],
-    'timestamp': [
-        '2024-01-01 00:00:00',
-        '2024-01-01 12:00:00',
-        '2024-01-02 00:00:00',
-        '2024-01-02 01:00:00',
-        '2024-01-03 01:00:00'
-    ]
-}
-df = pd.DataFrame(data)
-df['timestamp'] = pd.to_datetime(df['timestamp'])  # Ensure timestamp is in datetime format
-result = time_check(df)
-print(result)
+if __name__ == "__main__":
+    # Path to the dataset-1.csv file
+    dataset_path = r'E:\Mapup\Mapup-Assessment\datasets\dataset-1.csv'
+
+    # Read the dataset
+    df = pd.read_csv(dataset_path)
+
+    # Run the time_check function
+    incorrect_timestamps = time_check(df)
+
+    # Print the results
+    print("\nIncorrect Timestamps:")
+    print(incorrect_timestamps[incorrect_timestamps])  # Only print True values
